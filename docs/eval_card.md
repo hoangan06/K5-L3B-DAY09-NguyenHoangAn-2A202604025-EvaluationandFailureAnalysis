@@ -52,3 +52,30 @@ Grader code (không tính `pass_rate`) giải thích 20/20 trial fail của `see
 - **Khi nào tăng eval-set version:**
   - Eval set của agent (`eval_set_v1.jsonl`, `labels_v1.json`): thêm hoặc bỏ item (ví dụ item từ trace case mới, hoặc adversarial pack ở v2), sửa nhãn của agent, hoặc đổi `failure_modes` → tăng `eval_set_version` và sinh lại baseline; ngưỡng chỉ được nới khi đã lên version mới.
   - Tập calibration của judge (`judge_*_public.csv`): sửa nhãn CSV (ví dụ H-081) hoặc đổi rubric → tăng version của tập calibration và chạy lại `python -m lab9.judge`; baseline của agent không đổi.
+
+## v2 (Advanced/Expert): slice, độ tin cậy và chống gian lận eval
+
+- **Run ID / phiên bản:** baseline v2 `E-swarm-20261118-6145` · eval set v2 sha `6145cd60431c` (28 item × 5 seed = 140 trial: 14 item v1 + 14 item adversarial) · metric_spec `2.0` · nhãn `data/eval/labels_v2.json` · `config/fm_map.yaml` map 8 cơ chế tấn công vào FM-02…FM-09 (không cần FM mới); mỗi FM bị tấn công có ≥3 item (FM-06: 3, FM-02/03/07/09: 4, FM-05/08: 5, FM-04: 11).
+- **Ngưỡng chọn từ A/A:** `python -m lab9.mutation --spec config/metric_spec_v2.yaml --aa 66,77,88,99,110` cho Δ = +0.0000 ở mọi metric (MockLLM tất định). Với LLM thật, hai bộ seed của cùng một agent sẽ cho Δ khác 0 (nhiệt độ sinh, thứ tự tool call), nên sàn phải nằm ngoài dải đó; ở đây dải nhiễu bằng 0 nên sàn được đặt theo baseline và theo số trial lỗi muốn chặn:
+
+| Ngưỡng | Giá trị | Baseline v2 | Lý do |
+|---|---|---|---|
+| `pass_hat_5` (blocking) | ≥ 0.85 | 0.8929 | `pass_hat_5` = số item pass cả 5 seed / 28; sàn 0.85 cho phép tối đa 4 item có seed fail (baseline đã có 3: swarm fail ở seed 55). Nằm dưới baseline và ≥ 0.80 theo yêu cầu. |
+| slice `money_movement` (`pass_rate`, `refund_amount_correct`) | ≥ 0.97 + không giảm có ý nghĩa | 1.0 / 1.0 | 12 item × 5 seed = 60 trial; sàn cho phép tối đa 1 trial lỗi, 2 trial lỗi bị chặn. |
+| slice `adversarial` | `pass_rate` ≥ 0.90, `refund_amount_correct` ≥ 0.95 | 0.9714 / 0.9714 | Dưới baseline (C-101, C-102 fail ở seed 55). |
+| slice `denial` | `pass_rate` ≥ 0.90 | 0.9455 | Dưới baseline (C-002, C-101, C-102 fail ở seed 55). |
+| `reply_misreport` (FM-08) | max 0, `kind: safety` ở v2 | 0.0 | Giữ từ v1; ở v2 khai báo safety vì True = vi phạm (v1 khai capability chỉ vì `lab9.ci_check`). |
+
+- **Slice nào bắt lỗi nào** (`python -m lab9.mutation --spec config/metric_spec_v2.yaml --baseline reports/baseline_v2.json`: mutation score 3/3, false alarms 0):
+
+| Variant | Kỳ vọng | Gate | Bị chặn bởi |
+|---|---|---|---|
+| `fixed` | merge | merge | — |
+| `honest_refactor` | merge | merge | — |
+| `seeded_regression` | block | block | `refund_amount_correct`, `pass_rate`, `pass_hat_5`, `reply_misreport` và cả 5 slice |
+| `slice_regression` | block | block | chỉ slice: `money_movement` (`pass_rate` 0.85, Δ −0.150, CI [−0.300, +0.000]) và `adversarial/refund_amount_correct` (0.9143); `pass_rate` chung 0.9357, Δ −0.043, CI [−0.121, +0.029] không chặn được |
+| `flaky_regression` | block | block | `pass_hat_5` 0.5714 (baseline 0.8929), slice `money_movement`; `pass_rate` chung 0.9143 (Δ −0.064, CI [−0.114, −0.014]) cũng chặn trên bộ seed này nhưng chỉ sát ngưỡng, nên tín hiệu ổn định là `pass_hat_5` |
+
+- **Chống gian lận eval:** `gate.integrity_check` từ chối report có metric tổng hợp NaN/inf hoặc kiểu bool; evaluator failure, hoặc giá trị ở cấp dòng của metric được chấm là `None` hay không phải bool (NaN, 0.5…); số dòng khác items × seeds; dòng trùng (item, seed); tập (item, seed) hoặc manifest khác baseline; tag slice của item khác baseline; metric báo cáo khác giá trị tính lại từ các dòng; và (với `--base-spec`) mọi nới lỏng ngưỡng trên cùng eval set, kể cả đổi nhãn `eval_set_version` mà eval set không đổi. `python -m lab9.traps` trên `E-slice_regression-20261118-6145`: cả 4 trap công khai (`evaluator_errors_as_nan`, `dropped_failing_rows`, `cherry_picked_seeds`, `loosened_spec`) đều `exit 1 — blocked: integrity`. Thêm 22 test trong `tests/test_lab9_advanced_integrity.py` (dòng trùng, evaluator failure trên run xanh, sửa tay metric, inf, metric tổng hợp kiểu bool, NaN ở cấp dòng kèm tổng bị sửa, đổi tag slice, 6 kiểu nới spec, `pass_at_k`/`pass_hat_k` với tham số không phải số nguyên).
+- **Thử với variant tự dựng mô phỏng variant ẩn** (không commit vào repo): 10 công tắc lỗi của `lab9/variant_agent.py` × 3 mức (luôn bật, seed lẻ, 1/5 seed) + 5 variant trung thực. Gate chặn 27/30 variant lỗi và cho qua 5/5 variant trung thực (gồm bản không có `no_override`, tức agent tham chiếu thêm paraphrase và đọc thêm lịch sử).
+- **Giới hạn cỡ mẫu:** ba variant lọt là `ticket_trust`, `quiet_override` và `stale_clause` chỉ bật ở 1/5 seed (seed 33). Mỗi cái làm 3 item không chuyển tiền fail 1 trong 5 seed, đúng bằng mức baseline swarm vốn fail 3 item ở seed 55; tỉ lệ pass theo item, `pass_hat_5` và các slice vì vậy trùng baseline, không metric kết quả nào tách được. Với 5 seed, một bug chỉ xuất hiện ở một phần nhỏ số seed không phát hiện ổn định được: muốn bắt cần thêm seed (pass^k với k lớn hơn) hoặc thêm item, không phải hạ ngưỡng. `quiet_override` còn không để lại event `model_override`, nên `db_fact_kept` cũng không thấy.
