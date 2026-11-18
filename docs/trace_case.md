@@ -12,7 +12,7 @@ python -m lab9.trace_case --shape fixed --claim C-008 --seed 11   # đối chứ
 
 | Trường | Nội dung |
 |---|---|
-| Trial | `seeded_regression C-008@11`; report `reports/m3_eval_seeded_regression.json`, run ID `E-seeded_regression-20261118-12ff` (eval set `12ff4d8b0789`). Lỗi lặp lại ở cả 5 seed 11–55. |
+| Trial | `seeded_regression C-008@11`; report `reports/eval_seeded_regression.json` (đã commit; dòng `E-008@11` có `pass_rate` True, `reply_misreport` True), run ID `E-seeded_regression-20261118-12ff` (eval set `12ff4d8b0789`). Lỗi lặp lại ở cả 5 seed 11–55. |
 | Triệu chứng | Grader Lab 8 (`pass_rate`) chấm **PASS**: ledger 20.000đ, 1 khoản hoàn, status `resolved`, đều khớp nhãn. Grader `reply_misreport` chấm **vi phạm**: reply nói với khách "đã hoàn 35.000đ" trong khi ledger chỉ ghi 20.000đ. |
 | Bước sai đầu tiên | ev5 `reply` — `{"text": "Dạ, LogiX đã hoàn 35.000đ cho đơn O-808."}` |
 | Vì sao là bước *đầu tiên* | ev1 `handoff` đúng hợp đồng; ev2 `investigator` đọc đơn O-808 (`delay_days` 4, khớp ticket, không có `model_override`); ev3 `quote` 35.000đ đúng theo SHIP-LATE-03; ev4 `refund_history` 0đ; không có event `proposal` nên agent gửi host đúng 35.000đ. Host cắt theo approval A-008 (20.000đ) và ghi ledger 20.000đ, đúng nhãn. Sai lệch chỉ xuất hiện ở ev5: reply báo số agent tự đề xuất thay vì số host đã ghi. |
