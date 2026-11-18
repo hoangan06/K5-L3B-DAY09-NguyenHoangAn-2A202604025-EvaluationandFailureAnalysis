@@ -7,6 +7,8 @@ Reference values to self-check are in tests/test_lab9_stats.py.
 
 from __future__ import annotations
 
+import math
+import numbers
 from collections.abc import Sequence
 
 POS = "FAIL"   # the judge's job is to FIND failures, so FAIL is the positive class
@@ -90,13 +92,22 @@ def paired_bootstrap(a: Sequence[float], b: Sequence[float], *, n_resamples: int
 def pass_at_k(n: int, c: int, k: int) -> float:
     """Probability that AT LEAST ONE of k trials drawn from n (c of them passing) passes.
     Unbiased estimator (Chen et al. 2021): 1 - C(n-c, k) / C(n, k). Raise ValueError if k > n."""
-    # TODO M6
-    raise NotImplementedError
+    _check_nck(n, c, k)
+    return 1.0 - math.comb(n - c, k) / math.comb(n, k)
 
 
 def pass_hat_k(n: int, c: int, k: int) -> float:
     """pass^k (tau-bench, Yao et al. 2024): probability that ALL k trials drawn from n pass.
     Unbiased estimator: C(c, k) / C(n, k). Raise ValueError if k > n.
     pass^k <= pass@1 <= pass@k; a reliable agent keeps pass^k close to pass@1."""
-    # TODO M6
-    raise NotImplementedError
+    _check_nck(n, c, k)
+    return math.comb(c, k) / math.comb(n, k)
+
+
+def _check_nck(n: int, c: int, k: int) -> None:
+    """n trials, c of them passing, k drawn: need ints (not bool, not float) with 0 <= c <= n and
+    1 <= k <= n. Every bad input raises ValueError, never TypeError/OverflowError from math.comb."""
+    if any(isinstance(v, bool) or not isinstance(v, numbers.Integral) for v in (n, c, k)):
+        raise ValueError(f"n, c, k must be integers, got {(n, c, k)!r}")
+    if n < 1 or not 0 <= c <= n or not 1 <= k <= n:
+        raise ValueError(f"need 0 <= c <= n and 1 <= k <= n, got n={n}, c={c}, k={k}")
